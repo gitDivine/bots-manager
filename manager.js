@@ -24,6 +24,7 @@ if (!TG_TOKEN || !TG_CHAT_ID) {
 
 // ── State ────────────────────────────────────────────────────
 const processes = {};   // botId → { process, startedAt, logFile }
+const manuallyKilled = new Set(); // bots stopped via /stop — skip auto-restart
 const startTime = Date.now();
 let lastUpdateId = 0;
 
@@ -88,7 +89,23 @@ function startBot(botId) {
     child.on('exit', async (code) => {
         log.warn(`${bot.name} exited with code ${code}`);
         processes[botId].process = null;
-        await tgSend(`⚠️ ${bot.name} stopped (exit code: ${code})`);
+
+        if (manuallyKilled.has(botId)) {
+            // Intentionally stopped via /stop — don't auto-restart
+            manuallyKilled.delete(botId);
+            await tgSend(`🛑 ${bot.name} stopped by command`);
+        } else {
+            // Unexpected crash — auto-restart after 10 seconds
+            await tgSend(
+                `⚠️ ${bot.name} crashed (exit code: ${code})\n` +
+                `🔄 Auto-restarting in 10 seconds...`
+            );
+            setTimeout(() => {
+                const result = startBot(botId);
+                log.info(`Auto-restart: ${result}`);
+                tgSend(`✅ ${bot.name} auto-restarted`);
+            }, 10_000);
+        }
     });
 
     processes[botId] = {
@@ -110,6 +127,7 @@ function killBot(botId) {
         return `⚠️ ${bot.name} is not running`;
     }
 
+    manuallyKilled.add(botId);
     proc.kill('SIGTERM');
     log.info(`Killed ${bot.name}`);
     return `🛑 ${bot.name} stopped`;
