@@ -273,11 +273,17 @@ async function getWallet() {
 // ── Heartbeat ────────────────────────────────────────────────────
 async function getHeartbeat() {
     const uptime = formatUptime(Date.now() - startTime);
-    const running = Object.entries(BOTS).filter(([id]) => {
+    let runningCount = 0;
+    let botStatusMsg = '';
+
+    for (const [id, bot] of Object.entries(BOTS)) {
         const proc = processes[id];
-        return proc?.process && !proc.process.killed;
-    }).length;
-    const total = Object.keys(BOTS).length;
+        const running = proc?.process && !proc.process.killed;
+        if (running) runningCount++;
+
+        const botUptime = running ? formatUptime(Date.now() - proc.startedAt) : 'OFF';
+        botStatusMsg += `  ${running ? '🟢' : '🔴'} ${bot.name}: ${botUptime}\n`;
+    }
 
     let ethBal = '?';
     if (RPC_URL && PRIVATE_KEY) {
@@ -290,8 +296,9 @@ async function getHeartbeat() {
     }
 
     return `💓 <b>Manager is ALIVE</b>\n` +
-        `⏱ Uptime: ${uptime}\n` +
-        `🤖 Bots: ${running}/${total} running\n` +
+        `⏱ Manager Uptime: ${uptime}\n` +
+        `🤖 Bots: ${runningCount}/${Object.keys(BOTS).length} running\n` +
+        botStatusMsg +
         `🔋 ETH: ${ethBal}\n` +
         `⏰ Time: ${new Date().toISOString().replace('T', ' ').slice(0, 19)}`;
 }
