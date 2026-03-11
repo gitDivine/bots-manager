@@ -170,6 +170,9 @@ pm2 startup
 - `pm2 status` — Check if the manager is running
 - `pm2 logs bots-manager` — See live logs from all your bots
 - `pm2 restart bots-manager` — Restart everything
+- `pm2 stop bots-manager` — Stop the manager (temporary)
+- `pm2 delete bots-manager` — Remove the manager from PM2 (permanent)
+- `pm2 save` — Save the current list so it persists after reboot (run after stop/delete)
 
 ## Self-Healing Architecture
 
