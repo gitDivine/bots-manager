@@ -141,25 +141,54 @@ mybot: {
 
 Restart the manager and the new bot is immediately controllable via Telegram.
 
-## Running 24/7 on a VPS
+## Running 24/7 on a VPS (Recommended)
 
+To ensure your bots stay online even if you log out or the server reboots, use **PM2**.
+
+> [!TIP]
+> **You only need to run the Manager in PM2.** The manager will handle starting and restarting all your individual bots automatically.
+
+### 1. Install PM2
 ```bash
-# Install PM2
 sudo npm install -g pm2
+```
 
-# Start the manager (it auto-starts all bots)
+### 2. Start the Manager
+```bash
+# From the bots-manager folder
 pm2 start manager.js --name "bots-manager"
+```
 
-# View logs
-pm2 logs bots-manager
-
-# Persist across reboots
+### 3. Enable Auto-Restart on Boot
+```bash
 pm2 save
 pm2 startup
 ```
+*Follow the on-screen instructions from `pm2 startup` to complete the setup.*
 
-## How It Works
+### 4. Useful PM2 Commands
+- `pm2 status` — Check if the manager is running
+- `pm2 logs bots-manager` — See live logs from all your bots
+- `pm2 restart bots-manager` — Restart everything
 
+## Self-Healing Architecture
+
+The system is designed to be zero-maintenance:
+
+1. **PM2 watches the Manager**: If the manager process crashes or the VPS reboots, PM2 brings it back instantly.
+2. **Manager watches the Bots**: The manager monitors every bot it starts. If a bot crashes, the manager sends you a Telegram alert and **automatically restarts it** after 10 seconds.
+3. **Auto-Updates**: Both the manager and the bots check GitHub every 10-60 minutes. If you push new code, they pull it, install dependencies, and restart themselves with the latest version.
+
+```mermaid
+graph TD
+    VPS[Oracle VPS Reboot] --> PM2[PM2 Process Manager]
+    PM2 -->|Starts| MGR[Bots Manager]
+    MGR -->|Launches| B1[⚡ Arb Bot]
+    MGR -->|Launches| B2[💀 Liquidation Bot]
+    B1 -->|Crashes| MGR
+    MGR -->|Restarts| B1
+    MGR -->|Alerts| TG[Telegram App]
+```
 ```
 Your Phone (Telegram)
     ↕ commands + responses
