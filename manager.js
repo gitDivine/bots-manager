@@ -349,22 +349,44 @@ function loadBotEnv(dir) {
     return vars;
 }
 
-function getHelp() {
+function getMainMenu() {
+    return {
+        text: `🤖 <b>Bots Manager</b>\nTap a button below:`,
+        buttons: [
+            [
+                { text: '📊 Status', callback_data: 'menu:status' },
+                { text: '💰 Wallet', callback_data: 'menu:wallet' },
+            ],
+            [
+                { text: '▶️ Start', callback_data: 'menu:start' },
+                { text: '⏹ Stop', callback_data: 'menu:stop' },
+                { text: '🔄 Restart', callback_data: 'menu:restart' },
+            ],
+            [
+                { text: '📝 Logs', callback_data: 'menu:logs' },
+                { text: '💸 Withdraw', callback_data: 'menu:withdraw' },
+            ],
+            [
+                { text: '💓 Heartbeat', callback_data: 'menu:heartbeat' },
+                { text: '❓ Help', callback_data: 'menu:help' },
+            ],
+        ],
+    };
+}
+
+function getHelpText() {
     return `🤖 <b>Bots Manager Commands</b>\n\n` +
+        `/menu — Main menu\n` +
         `/status — All bots + ETH balance\n` +
-        `/status &lt;bot&gt; — Specific bot status\n` +
-        `/start &lt;bot&gt; — Start a bot\n` +
-        `/stop &lt;bot&gt; — Stop a bot\n` +
-        `/restart &lt;bot&gt; — Restart a bot\n` +
-        `/startall — Start all bots\n` +
-        `/stopall — Stop all bots\n` +
-        `/restartall — Restart all bots\n` +
-        `/logs &lt;bot&gt; — Last 10 log lines\n` +
+        `/start — Start a bot\n` +
+        `/stop — Stop a bot\n` +
+        `/restart — Restart a bot\n` +
+        `/logs — Bot logs\n` +
         `/wallet — ETH + USDC balance\n` +
         `/heartbeat — Manual alive ping\n` +
-        `/withdraw &lt;bot&gt; &lt;token&gt; — Withdraw profits\n` +
-        `/help — This message\n\n` +
-        `<b>Bot IDs:</b> ${Object.keys(BOTS).join(', ')}`;
+        `/withdraw — Withdraw profits\n\n` +
+        `<b>Bot IDs:</b> ${Object.keys(BOTS).join(', ')}\n` +
+        `<i>Or just tap the buttons!</i>`;
 }
 
 // ── Command Router ───────────────────────────────────────────
@@ -420,10 +442,11 @@ async function handleCommand(text) {
             return await doWithdraw(arg1, arg2);
 
         case '/help':
-            return getHelp();
+            return getHelpText();
 
+        case '/menu':
         default:
-            return getHelp();
+            return getMainMenu();
     }
 }
 
@@ -493,10 +516,25 @@ async function pollTelegram() {
                     const parts = data.split(':');
                     let response;
 
-                    if (parts[0] === 'dowithdraw' && parts.length === 3) {
+                    if (parts[0] === 'menu') {
+                        // Main menu button was tapped
+                        const action = parts[1];
+                        switch (action) {
+                            case 'status': response = await getStatus(); break;
+                            case 'wallet': response = await getWallet(); break;
+                            case 'heartbeat': response = await getHeartbeat(); break;
+                            case 'help': response = getHelpText(); break;
+                            case 'start': response = { text: '\u25b6\ufe0f <b>Which bot to start?</b>', buttons: buildBotButtons('start') }; break;
+                            case 'stop': response = { text: '\u23f9 <b>Which bot to stop?</b>', buttons: buildBotButtons('stop') }; break;
+                            case 'restart': response = { text: '\ud83d\udd04 <b>Which bot to restart?</b>', buttons: buildBotButtons('restart') }; break;
+                            case 'logs': response = { text: '\ud83d\udcdd <b>Which bot\'s logs?</b>', buttons: buildBotButtons('logs', false) }; break;
+                            case 'withdraw': response = { text: '\ud83d\udcb8 <b>Withdraw from which bot?</b>', buttons: buildBotButtons('withdraw', false) }; break;
+                            default: response = getMainMenu();
+                        }
+                    } else if (parts[0] === 'dowithdraw' && parts.length === 3) {
                         response = await doWithdraw(parts[1], parts[2]);
                     } else if (parts[0] === 'withdrawhelp') {
-                        response = `💸 Type: /withdraw ${parts[1]} <token_address>`;
+                        response = `\ud83d\udcb8 Type: /withdraw ${parts[1]} <token_address>`;
                     } else {
                         response = await handleCallback(parts[0], parts[1]);
                     }
