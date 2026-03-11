@@ -58,7 +58,26 @@ Fill in these fields, then save and close (`Ctrl+O` → `Enter` → `Ctrl+X` in 
 
 ### 3. Configure Your Bots
 
-Edit `bots.config.js` to set the paths to your bot directories:
+You need to tell the manager where your bots are located.
+
+1. **Find your bot paths:**
+   Go into each bot folder and type `pwd` to see the full path:
+   ```bash
+   cd ~/base-arb-bot
+   pwd
+   # Example output: /home/ubuntu/base-arb-bot
+   ```
+
+2. **Edit the config file:**
+   ```bash
+   # Linux / Mac
+   nano bots.config.js
+
+   # Windows
+   notepad bots.config.js
+   ```
+
+3. **Update the `dir` values** with the paths you found in step 1:
 
 ```js
 const BOTS = {
@@ -76,6 +95,7 @@ const BOTS = {
   },
 };
 ```
+Save and close (`Ctrl+O` → `Enter` → `Ctrl+X` in nano).
 
 ### 4. Run
 
