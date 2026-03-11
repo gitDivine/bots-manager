@@ -1,0 +1,16 @@
+{
+    "name": "bots-manager",
+    "version": "1.0.0",
+    "description": "Telegram-controlled bot process supervisor",
+    "main": "manager.js",
+    "scripts": {
+        "start": "node manager.js"
+    },
+    "dependencies": {
+        "dotenv": "^16.4.1",
+        "ethers": "^6.9.0"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    }
+}
