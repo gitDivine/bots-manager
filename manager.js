@@ -585,6 +585,21 @@ function loadContractAddresses() {
     }
 }
 
+async function autoUpdate() {
+    try {
+        log.info('Checking for bots-manager updates...');
+        const result = execSync('git pull', { encoding: 'utf8', timeout: 15000 }).trim();
+        if (result !== 'Already up to date.' && result !== 'Already up-to-date.') {
+            log.info(`[Update] New manager code pulled: ${result}`);
+            await tgSend(`🔄 Bots Manager update found — restarting...`);
+            execSync('npm install --omit=dev', { encoding: 'utf8', timeout: 30000 });
+            process.exit(0); // PM2 or systemd will auto-restart
+        }
+    } catch (err) {
+        log.warn('[Update] autoUpdate skipped:', err.message);
+    }
+}
+
 // ── Main ─────────────────────────────────────────────────────
 async function main() {
     console.log('\n');
@@ -595,6 +610,9 @@ async function main() {
     console.log();
 
     log.info(`Managing ${Object.keys(BOTS).length} bot(s): ${Object.keys(BOTS).join(', ')}`);
+
+    // Initial auto-update check
+    await autoUpdate();
 
     // Load contract addresses from bot .env files
     loadContractAddresses();
@@ -620,8 +638,13 @@ async function main() {
 
     // Hourly heartbeat
     setInterval(async () => {
-        await tgSend(getStatus());
+        await tgSend(await getStatus());
     }, 3600_000);
+
+    // 10-minute auto-update check
+    setInterval(async () => {
+        await autoUpdate();
+    }, 600_000);
 
     // Start listening for Telegram commands
     log.success('Listening for Telegram commands...');
