@@ -143,8 +143,19 @@ function restartBot(botId) {
     });
 }
 
-// ── Status ───────────────────────────────────────────────────
-function getStatus(botId) {
+// ── Status ───────────────────────────────────────────────────────
+async function getStatus(botId) {
+    // Fetch ETH balance
+    let ethBal = '?';
+    if (RPC_URL && PRIVATE_KEY) {
+        try {
+            const provider = new ethers.JsonRpcProvider(RPC_URL);
+            const w = new ethers.Wallet(PRIVATE_KEY, provider);
+            const bal = await provider.getBalance(w.address);
+            ethBal = parseFloat(ethers.formatEther(bal)).toFixed(4);
+        } catch { }
+    }
+
     if (botId) {
         const bot = BOTS[botId];
         if (!bot) return `❌ Unknown bot: ${botId}`;
@@ -159,7 +170,8 @@ function getStatus(botId) {
 
     // All bots status
     let msg = `📊 <b>Bots Manager Status</b>\n`;
-    msg += `Manager uptime: ${formatUptime(Date.now() - startTime)}\n\n`;
+    msg += `Manager uptime: ${formatUptime(Date.now() - startTime)}\n`;
+    msg += `🔋 ETH: ${ethBal}\n\n`;
 
     for (const [id, bot] of Object.entries(BOTS)) {
         const proc = processes[id];
@@ -173,8 +185,8 @@ function getStatus(botId) {
     return msg;
 }
 
-// ── Logs ─────────────────────────────────────────────────────
-function getLogs(botId, lines = 15) {
+// ── Logs ─────────────────────────────────────────────────────────
+function getLogs(botId, lines = 10) {
     const bot = BOTS[botId];
     if (!bot) return `❌ Unknown bot: ${botId}`;
 
@@ -191,7 +203,10 @@ function getLogs(botId, lines = 15) {
     }
 }
 
-// ── Wallet ───────────────────────────────────────────────────
+// ── Wallet ───────────────────────────────────────────────────────
+const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'; // Base USDC
+const USDC_ABI = ['function balanceOf(address) view returns (uint256)'];
+
 async function getWallet() {
     if (!RPC_URL || !PRIVATE_KEY) return '❌ Set RPC_URL and PRIVATE_KEY in manager .env';
     try {
@@ -199,12 +214,48 @@ async function getWallet() {
         const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
         const balance = await provider.getBalance(wallet.address);
         const ethBal = parseFloat(ethers.formatEther(balance)).toFixed(4);
+
+        // USDC balance
+        let usdcBal = '0.00';
+        try {
+            const usdc = new ethers.Contract(USDC_ADDRESS, USDC_ABI, provider);
+            const usdcRaw = await usdc.balanceOf(wallet.address);
+            usdcBal = parseFloat(ethers.formatUnits(usdcRaw, 6)).toFixed(2);
+        } catch { }
+
         return `💰 <b>Wallet</b>\n` +
             `Address: <code>${wallet.address}</code>\n` +
-            `ETH: ${ethBal}`;
+            `🔋 ETH: ${ethBal}\n` +
+            `💵 USDC: $${usdcBal}`;
     } catch (err) {
         return `❌ Wallet error: ${err.message}`;
     }
+}
+
+// ── Heartbeat ────────────────────────────────────────────────────
+async function getHeartbeat() {
+    const uptime = formatUptime(Date.now() - startTime);
+    const running = Object.entries(BOTS).filter(([id]) => {
+        const proc = processes[id];
+        return proc?.process && !proc.process.killed;
+    }).length;
+    const total = Object.keys(BOTS).length;
+
+    let ethBal = '?';
+    if (RPC_URL && PRIVATE_KEY) {
+        try {
+            const provider = new ethers.JsonRpcProvider(RPC_URL);
+            const w = new ethers.Wallet(PRIVATE_KEY, provider);
+            const bal = await provider.getBalance(w.address);
+            ethBal = parseFloat(ethers.formatEther(bal)).toFixed(4);
+        } catch { }
+    }
+
+    return `💓 <b>Manager is ALIVE</b>\n` +
+        `⏱ Uptime: ${uptime}\n` +
+        `🤖 Bots: ${running}/${total} running\n` +
+        `🔋 ETH: ${ethBal}\n` +
+        `⏰ Time: ${new Date().toISOString().replace('T', ' ').slice(0, 19)}`;
 }
 
 // ── Withdraw ─────────────────────────────────────────────────
@@ -262,7 +313,7 @@ function loadBotEnv(dir) {
 
 function getHelp() {
     return `🤖 <b>Bots Manager Commands</b>\n\n` +
-        `/status — All bots status\n` +
+        `/status — All bots + ETH balance\n` +
         `/status &lt;bot&gt; — Specific bot status\n` +
         `/start &lt;bot&gt; — Start a bot\n` +
         `/stop &lt;bot&gt; — Stop a bot\n` +
@@ -270,8 +321,9 @@ function getHelp() {
         `/startall — Start all bots\n` +
         `/stopall — Stop all bots\n` +
         `/restartall — Restart all bots\n` +
-        `/logs &lt;bot&gt; — Last 15 log lines\n` +
-        `/wallet — Check ETH balance\n` +
+        `/logs &lt;bot&gt; — Last 10 log lines\n` +
+        `/wallet — ETH + USDC balance\n` +
+        `/heartbeat — Manual alive ping\n` +
         `/withdraw &lt;bot&gt; &lt;token&gt; — Withdraw profits\n` +
         `/help — This message\n\n` +
         `<b>Bot IDs:</b> ${Object.keys(BOTS).join(', ')}`;
@@ -321,7 +373,7 @@ async function handleCommand(text) {
             return restartMsg;
 
         case '/status':
-            return getStatus(arg1);
+            return await getStatus(arg1);
 
         case '/logs':
             if (!arg1) return '❓ Usage: /logs <bot>';
@@ -329,6 +381,10 @@ async function handleCommand(text) {
 
         case '/wallet':
             return await getWallet();
+
+        case '/heartbeat':
+        case '/ping':
+            return await getHeartbeat();
 
         case '/withdraw':
             if (!arg1 || !arg2) return '❓ Usage: /withdraw <bot> <token_address|eth>';
