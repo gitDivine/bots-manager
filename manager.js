@@ -52,16 +52,54 @@ async function tgSend(text) {
     } catch { }
 }
 
+async function tgSendWithButtons(text, buttons) {
+    try {
+        await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                chat_id: TG_CHAT_ID,
+                text,
+                parse_mode: 'HTML',
+                reply_markup: { inline_keyboard: buttons },
+            }),
+        });
+    } catch { }
+}
+
+async function tgAnswerCallback(callbackId, text) {
+    try {
+        await fetch(`https://api.telegram.org/bot${TG_TOKEN}/answerCallbackQuery`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ callback_query_id: callbackId, text }),
+        });
+    } catch { }
+}
+
 async function tgGetUpdates() {
     try {
         const res = await fetch(
-            `https://api.telegram.org/bot${TG_TOKEN}/getUpdates?offset=${lastUpdateId + 1}&timeout=30`
+            `https://api.telegram.org/bot${TG_TOKEN}/getUpdates?offset=${lastUpdateId + 1}&timeout=30&allowed_updates=["message","callback_query"]`
         );
         const data = await res.json();
         return data.ok ? data.result : [];
     } catch {
         return [];
     }
+}
+
+// Build inline keyboard rows for bot selection
+function buildBotButtons(action, includeAll = true) {
+    const buttons = Object.entries(BOTS).map(([id, bot]) => ({
+        text: bot.name,
+        callback_data: `${action}:${id}`,
+    }));
+    const rows = [buttons];
+    if (includeAll) {
+        rows.push([{ text: '🔁 All Bots', callback_data: `${action}:all` }]);
+    }
+    return rows;
 }
 
 // ── Process Management ───────────────────────────────────────
@@ -330,53 +368,43 @@ function getHelp() {
 }
 
 // ── Command Router ───────────────────────────────────────────
+// Returns { text, buttons } or just a string
 async function handleCommand(text) {
     const parts = text.trim().split(/\s+/);
-    const cmd = parts[0].toLowerCase();
+    const cmd = parts[0].toLowerCase().replace(/@\w+/, ''); // strip @botname
     const arg1 = parts[1]?.toLowerCase();
     const arg2 = parts[2];
 
     switch (cmd) {
         case '/start':
-            if (!arg1) return '❓ Usage: /start <bot>\nBot IDs: ' + Object.keys(BOTS).join(', ');
+            if (!arg1) return { text: '▶️ <b>Which bot to start?</b>', buttons: buildBotButtons('start') };
             return startBot(arg1);
 
         case '/stop':
         case '/kill':
-            if (!arg1) return '❓ Usage: /stop <bot>';
+            if (!arg1) return { text: '⏹ <b>Which bot to stop?</b>', buttons: buildBotButtons('stop') };
             return killBot(arg1);
 
         case '/restart':
-            if (!arg1) return '❓ Usage: /restart <bot>';
+            if (!arg1) return { text: '🔄 <b>Which bot to restart?</b>', buttons: buildBotButtons('restart') };
             return await restartBot(arg1);
 
         case '/startall':
-            let startMsg = '';
-            for (const id of Object.keys(BOTS)) {
-                startMsg += startBot(id) + '\n';
-            }
-            return startMsg;
+            return await handleBulk('start');
 
         case '/stopall':
         case '/killall':
-            let stopMsg = '';
-            for (const id of Object.keys(BOTS)) {
-                stopMsg += killBot(id) + '\n';
-            }
-            return stopMsg;
+            return await handleBulk('stop');
 
         case '/restartall':
-            let restartMsg = '';
-            for (const id of Object.keys(BOTS)) {
-                restartMsg += await restartBot(id) + '\n';
-            }
-            return restartMsg;
+            return await handleBulk('restart');
 
         case '/status':
+            if (!arg1) return await getStatus();
             return await getStatus(arg1);
 
         case '/logs':
-            if (!arg1) return '❓ Usage: /logs <bot>';
+            if (!arg1) return { text: '📝 <b>Which bot\'s logs?</b>', buttons: buildBotButtons('logs', false) };
             return getLogs(arg1);
 
         case '/wallet':
@@ -387,7 +415,8 @@ async function handleCommand(text) {
             return await getHeartbeat();
 
         case '/withdraw':
-            if (!arg1 || !arg2) return '❓ Usage: /withdraw <bot> <token_address|eth>';
+            if (!arg1) return { text: '💸 <b>Withdraw from which bot?</b>', buttons: buildBotButtons('withdraw', false) };
+            if (!arg2) return '❓ Usage: /withdraw <bot> <token_address|eth>';
             return await doWithdraw(arg1, arg2);
 
         case '/help':
@@ -395,6 +424,51 @@ async function handleCommand(text) {
 
         default:
             return getHelp();
+    }
+}
+
+// Handle bulk operations
+async function handleBulk(action) {
+    let msg = '';
+    for (const id of Object.keys(BOTS)) {
+        if (action === 'start') msg += startBot(id) + '\n';
+        else if (action === 'stop') msg += killBot(id) + '\n';
+        else if (action === 'restart') msg += await restartBot(id) + '\n';
+    }
+    return msg;
+}
+
+// Handle button press callbacks
+async function handleCallback(action, botId) {
+    if (botId === 'all') {
+        return await handleBulk(action);
+    }
+
+    switch (action) {
+        case 'start': return startBot(botId);
+        case 'stop': return killBot(botId);
+        case 'restart': return await restartBot(botId);
+        case 'logs': return getLogs(botId);
+        case 'status': return await getStatus(botId);
+        case 'withdraw':
+            // Show sub-options for withdraw
+            return {
+                text: `💸 <b>Withdraw from ${BOTS[botId]?.name || botId}:</b>`,
+                buttons: [
+                    [{ text: '🔷 Withdraw ETH', callback_data: `dowithdraw:${botId}:eth` }],
+                    [{ text: '💵 Enter token address', callback_data: `withdrawhelp:${botId}` }],
+                ]
+            };
+        default: return '❓ Unknown action';
+    }
+}
+
+// ── Send response (text or text+buttons) ─────────────────────
+async function sendResponse(response) {
+    if (typeof response === 'object' && response.buttons) {
+        await tgSendWithButtons(response.text, response.buttons);
+    } else {
+        await tgSend(response);
     }
 }
 
@@ -407,6 +481,31 @@ async function pollTelegram() {
             for (const update of updates) {
                 lastUpdateId = update.update_id;
 
+                // ── Handle button press ──
+                if (update.callback_query) {
+                    const cb = update.callback_query;
+                    if (String(cb.message?.chat?.id) !== String(TG_CHAT_ID)) continue;
+
+                    const data = cb.data; // e.g. "start:arb" or "dowithdraw:arb:eth"
+                    log.info(`Button: ${data}`);
+                    await tgAnswerCallback(cb.id, '⏳ Processing...');
+
+                    const parts = data.split(':');
+                    let response;
+
+                    if (parts[0] === 'dowithdraw' && parts.length === 3) {
+                        response = await doWithdraw(parts[1], parts[2]);
+                    } else if (parts[0] === 'withdrawhelp') {
+                        response = `💸 Type: /withdraw ${parts[1]} <token_address>`;
+                    } else {
+                        response = await handleCallback(parts[0], parts[1]);
+                    }
+
+                    await sendResponse(response);
+                    continue;
+                }
+
+                // ── Handle text message ──
                 const msg = update.message;
                 if (!msg || !msg.text) continue;
 
@@ -418,7 +517,7 @@ async function pollTelegram() {
 
                 log.info(`Command: ${text}`);
                 const response = await handleCommand(text);
-                await tgSend(response);
+                await sendResponse(response);
             }
         } catch (err) {
             log.error('Poll error:', err.message);
