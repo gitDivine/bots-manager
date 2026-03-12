@@ -25,7 +25,14 @@ if (!TG_TOKEN || !TG_CHAT_ID) {
 // ── State ────────────────────────────────────────────────────
 const processes = {};   // botId → { process, startedAt, logFile }
 const manuallyKilled = new Set(); // bots stopped via /stop — skip auto-restart
+const alertStatus = {}; // botId:errorType -> lastAlertTimestamp
 const startTime = Date.now();
+
+const ERROR_PATTERNS = [
+    { name: 'RPC_429', pattern: /429|Monthly capacity limit exceeded/i, message: '🚫 RPC Limit Exceeded (429)' },
+    { name: 'NETWORK_FAIL', pattern: /failed to detect network|not started/i, message: '🌐 RPC Network Failure' },
+    { name: 'INSUFFICIENT_FUNDS', pattern: /insufficient funds/i, message: '💸 Insufficient Funds' },
+];
 let lastUpdateId = 0;
 
 // ── Logging ──────────────────────────────────────────────────
@@ -238,6 +245,50 @@ function getLogs(botId, lines = 10) {
         return `📝 <b>${bot.name} — Last ${lines} lines:</b>\n<pre>${lastLines}</pre>`;
     } catch {
         return `❌ Could not read logs for ${bot.name}`;
+    }
+}
+
+async function monitorLogs() {
+    for (const [id, bot] of Object.entries(BOTS)) {
+        const proc = processes[id];
+        if (!proc?.process || proc.process.killed) continue;
+
+        try {
+            if (!fs.existsSync(proc.logFile)) continue;
+
+            // Read last 2KB of log file
+            const stats = fs.statSync(proc.logFile);
+            const size = stats.size;
+            const bufferSize = Math.min(size, 2048);
+            const fd = fs.openSync(proc.logFile, 'r');
+            const buffer = Buffer.alloc(bufferSize);
+            fs.readSync(fd, buffer, 0, bufferSize, size - bufferSize);
+            fs.closeSync(fd);
+
+            const tail = buffer.toString('utf8');
+
+            for (const p of ERROR_PATTERNS) {
+                if (p.pattern.test(tail)) {
+                    const alertKey = `${id}:${p.name}`;
+                    const now = Date.now();
+                    const lastAlert = alertStatus[alertKey] || 0;
+
+                    // 1 hour cooldown per error type
+                    if (now - lastAlert > 3600_000) {
+                        alertStatus[alertKey] = now;
+                        log.error(`[Alert] ${bot.name}: ${p.message}`);
+                        await tgSend(
+                            `⚠️ <b>Bot Malfunction Detected</b>\n\n` +
+                            `Bot: ${bot.name}\n` +
+                            `Error: ${p.message}\n` +
+                            `Action: Please check logs or RPC settings.`
+                        );
+                    }
+                }
+            }
+        } catch (err) {
+            log.warn(`MonitorLogs error for ${id}:`, err.message);
+        }
     }
 }
 
@@ -648,6 +699,11 @@ async function main() {
 
     // Start listening for Telegram commands
     log.success('Listening for Telegram commands...');
+
+    // Log monitoring loop - every 30s
+    setInterval(monitorLogs, 30_000);
+    monitorLogs();
+
     await pollTelegram();
 }
 
