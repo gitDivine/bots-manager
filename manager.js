@@ -639,8 +639,9 @@ function loadContractAddresses() {
 async function autoUpdate() {
     try {
         log.info('Checking for bots-manager updates...');
-        const result = execSync('git pull', { encoding: 'utf8', timeout: 15000 }).trim();
-        if (result !== 'Already up to date.' && result !== 'Already up-to-date.') {
+        const resultRaw = execSync('git pull', { encoding: 'utf8', timeout: 15000 });
+        const result = resultRaw.trim();
+        if (!result.toLowerCase().includes('up to date')) {
             log.info(`[Update] New manager code pulled: ${result}`);
             await tgSend(`🔄 Bots Manager update found — restarting...`);
             execSync('npm install --omit=dev', { encoding: 'utf8', timeout: 30000 });
