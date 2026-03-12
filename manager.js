@@ -14,7 +14,7 @@ const { BOTS } = require('./bots.config');
 // ── Config ───────────────────────────────────────────────────
 const TG_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TG_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const RPC_URL = process.env.RPC_URL;
+const RPC_URL = process.env.RPC_URL || "https://mainnet.base.org";
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
 
 if (!TG_TOKEN || !TG_CHAT_ID) {
