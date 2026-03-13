@@ -33,7 +33,38 @@ const ERROR_PATTERNS = [
     { name: 'NETWORK_FAIL', pattern: /failed to detect network|not started/i, message: '🌐 RPC Network Failure' },
     { name: 'INSUFFICIENT_FUNDS', pattern: /insufficient funds/i, message: '💸 Insufficient Funds' },
 ];
+
+const PUBLIC_RPC_FALLBACKS = [
+    "https://mainnet.base.org",
+    "https://base.publicnode.com",
+    "https://1rpc.io/base"
+];
+
 let lastUpdateId = 0;
+
+// ── Helpers ──────────────────────────────────────────────────
+function withTimeout(promise, ms, timeoutError = 'Timeout') {
+    return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error(timeoutError)), ms))
+    ]);
+}
+
+async function getSafeBalance(address) {
+    const urls = [RPC_URL, ...PUBLIC_RPC_FALLBACKS];
+    for (const url of urls) {
+        if (!url) continue;
+        try {
+            const provider = new ethers.JsonRpcProvider(url);
+            // Race the balance check against a 5s timeout
+            const bal = await withTimeout(provider.getBalance(address), 5000, 'RPC Timeout');
+            return parseFloat(ethers.formatEther(bal)).toFixed(4);
+        } catch (err) {
+            console.warn(`[Manager] Balance check failed on ${url.split('//')[1]?.split('/')[0]}: ${err.message}`);
+        }
+    }
+    return '?';
+}
 
 // ── Logging ──────────────────────────────────────────────────
 const ts = () => new Date().toISOString().replace('T', ' ').slice(0, 19);
@@ -192,13 +223,9 @@ function restartBot(botId) {
 async function getStatus(botId) {
     // Fetch ETH balance
     let ethBal = '?';
-    if (RPC_URL && PRIVATE_KEY) {
-        try {
-            const provider = new ethers.JsonRpcProvider(RPC_URL);
-            const w = new ethers.Wallet(PRIVATE_KEY, provider);
-            const bal = await provider.getBalance(w.address);
-            ethBal = parseFloat(ethers.formatEther(bal)).toFixed(4);
-        } catch { }
+    if (PRIVATE_KEY) {
+        const wallet = new ethers.Wallet(PRIVATE_KEY);
+        ethBal = await getSafeBalance(wallet.address);
     }
 
     if (botId) {
@@ -297,18 +324,17 @@ const USDC_ADDRESS = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'; // Base USDC
 const USDC_ABI = ['function balanceOf(address) view returns (uint256)'];
 
 async function getWallet() {
-    if (!RPC_URL || !PRIVATE_KEY) return '❌ Set RPC_URL and PRIVATE_KEY in manager .env';
+    if (!PRIVATE_KEY) return '❌ Set PRIVATE_KEY in manager .env';
     try {
-        const provider = new ethers.JsonRpcProvider(RPC_URL);
-        const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
-        const balance = await provider.getBalance(wallet.address);
-        const ethBal = parseFloat(ethers.formatEther(balance)).toFixed(4);
+        const wallet = new ethers.Wallet(PRIVATE_KEY);
+        const ethBal = await getSafeBalance(wallet.address);
 
-        // USDC balance
+        // USDC balance still uses primary provider but with a timeout
         let usdcBal = '0.00';
         try {
+            const provider = new ethers.JsonRpcProvider(RPC_URL || "https://mainnet.base.org");
             const usdc = new ethers.Contract(USDC_ADDRESS, USDC_ABI, provider);
-            const usdcRaw = await usdc.balanceOf(wallet.address);
+            const usdcRaw = await withTimeout(usdc.balanceOf(wallet.address), 5000, 'USDC Timeout');
             usdcBal = parseFloat(ethers.formatUnits(usdcRaw, 6)).toFixed(2);
         } catch { }
 
@@ -337,13 +363,9 @@ async function getHeartbeat() {
     }
 
     let ethBal = '?';
-    if (RPC_URL && PRIVATE_KEY) {
-        try {
-            const provider = new ethers.JsonRpcProvider(RPC_URL);
-            const w = new ethers.Wallet(PRIVATE_KEY, provider);
-            const bal = await provider.getBalance(w.address);
-            ethBal = parseFloat(ethers.formatEther(bal)).toFixed(4);
-        } catch { }
+    if (PRIVATE_KEY) {
+        const wallet = new ethers.Wallet(PRIVATE_KEY);
+        ethBal = await getSafeBalance(wallet.address);
     }
 
     return `💓 <b>Manager is ALIVE</b>\n` +
@@ -665,6 +687,14 @@ async function main() {
 
     // Initial auto-update check
     await autoUpdate();
+
+    // Flush the Telegram update queue (reset offset to latest)
+    log.info('Flushing Telegram update queue...');
+    const initialUpdates = await tgGetUpdates();
+    if (initialUpdates.length > 0) {
+        lastUpdateId = initialUpdates[initialUpdates.length - 1].update_id;
+        log.success(`Queue flushed. Starting from update #${lastUpdateId}`);
+    }
 
     // Load contract addresses from bot .env files
     loadContractAddresses();
