@@ -250,8 +250,20 @@ async function getStatus(botId) {
         const running = proc?.process && !proc.process.killed;
         const uptime = running ? formatUptime(Date.now() - proc.startedAt) : '';
         msg += `${running ? '🟢' : '🔴'} <b>${bot.name}</b>`;
-        if (running) msg += ` — ${uptime}`;
-        msg += '\n';
+        if (running) {
+            msg += ` — ${uptime}\n`;
+            // Add last 2 lines of logs for visibility
+            const logPath = path.resolve(bot.dir, bot.logFile);
+            if (fs.existsSync(logPath)) {
+                try {
+                    const content = fs.readFileSync(logPath, 'utf8').trim().split('\n');
+                    const lastLines = content.slice(-2).map(l => `  <i>${l.slice(0, 50)}...</i>`).join('\n');
+                    msg += `${lastLines}\n`;
+                } catch { }
+            }
+        } else {
+            msg += ` (Stopped)\n`;
+        }
     }
 
     return msg;
