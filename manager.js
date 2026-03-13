@@ -685,7 +685,8 @@ async function main() {
 
     // Send status after bots launch
     setTimeout(async () => {
-        await tgSend(getStatus());
+        const s = await getStatus();
+        await tgSend(s);
     }, 5000);
 
     // Hourly heartbeat
