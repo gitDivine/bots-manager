@@ -53,9 +53,11 @@ function withTimeout(promise, ms, timeoutError = 'Timeout') {
 }
 
 async function getSafeBalance(address) {
-    const urls = [RPC_URL, ...PUBLIC_RPC_FALLBACKS];
+    // Force-filter out known dead/unstable Alchemy URLs to prevent hangs
+    const urls = [RPC_URL, ...PUBLIC_RPC_FALLBACKS]
+        .filter(url => url && !url.includes('alchemy'));
+
     for (const url of urls) {
-        if (!url) continue;
         try {
             const provider = new ethers.JsonRpcProvider(url);
             // Race the balance check against a 5s timeout
@@ -371,7 +373,8 @@ async function getWallet() {
         // USDC balance still uses primary provider but with a timeout
         let usdcBal = '0.00';
         try {
-            const provider = new ethers.JsonRpcProvider(RPC_URL || "https://mainnet.base.org");
+            const urls = [RPC_URL, ...PUBLIC_RPC_FALLBACKS].filter(u => u && !u.includes('alchemy'));
+            const provider = new ethers.JsonRpcProvider(urls[0] || "https://mainnet.base.org");
             const usdc = new ethers.Contract(USDC_ADDRESS, USDC_ABI, provider);
             const usdcRaw = await withTimeout(usdc.balanceOf(wallet.address), 5000, 'USDC Timeout');
             usdcBal = parseFloat(ethers.formatUnits(usdcRaw, 6)).toFixed(2);
@@ -423,7 +426,8 @@ async function doWithdraw(botId, tokenAddress) {
     if (!RPC_URL || !PRIVATE_KEY) return '❌ Set RPC_URL and PRIVATE_KEY';
 
     try {
-        const provider = new ethers.JsonRpcProvider(RPC_URL);
+        const urls = [RPC_URL, ...PUBLIC_RPC_FALLBACKS].filter(u => u && !u.includes('alchemy'));
+        const provider = new ethers.JsonRpcProvider(urls[0] || "https://mainnet.base.org");
         const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
         const contract = new ethers.Contract(bot.contractAddress, bot.contractABI, wallet);
 
