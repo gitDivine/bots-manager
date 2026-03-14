@@ -41,6 +41,8 @@ const PUBLIC_RPC_FALLBACKS = [
 ];
 
 let lastUpdateId = 0;
+let rpcDownStartTime = null;
+let lastRpcErrorAlert = 0;
 
 // ── Helpers ──────────────────────────────────────────────────
 function withTimeout(promise, ms, timeoutError = 'Timeout') {
@@ -58,11 +60,36 @@ async function getSafeBalance(address) {
             const provider = new ethers.JsonRpcProvider(url);
             // Race the balance check against a 5s timeout
             const bal = await withTimeout(provider.getBalance(address), 5000, 'RPC Timeout');
+
+            // Success! Clear the alarm
+            if (rpcDownStartTime) {
+                const downtime = Math.floor((Date.now() - rpcDownStartTime) / 1000);
+                log.success(`RPC Restored after ${downtime}s`);
+                await tgSend(`✅ <b>RPC Connection Restored</b>\nSystems are back online after ${Math.floor(downtime / 60)}m ${downtime % 60}s.`);
+                rpcDownStartTime = null;
+                lastRpcErrorAlert = 0;
+            }
+
             return parseFloat(ethers.formatEther(bal)).toFixed(4);
         } catch (err) {
             console.warn(`[Manager] Balance check failed on ${url.split('//')[1]?.split('/')[0]}: ${err.message}`);
         }
     }
+
+    // ALL RPCs failed
+    if (!rpcDownStartTime) rpcDownStartTime = Date.now();
+
+    const downtime = Date.now() - rpcDownStartTime;
+    if (downtime > 300_000) { // 5 minutes threshold
+        if (Date.now() - lastRpcErrorAlert > 300_000) { // Alert every 5 minutes
+            lastRpcErrorAlert = Date.now();
+            log.error(`[CRITICAL] Global RPC Failure detected for ${Math.floor(downtime / 60000)}m`);
+            await tgSend(`🚨 <b>URGENT: Global RPC Failure</b>\n` +
+                `The manager has lost connection to ALL RPC providers for ${Math.floor(downtime / 60000)}m.\n` +
+                `The bots are running blind. Check your RPC settings immediately.`);
+        }
+    }
+
     return '?';
 }
 
@@ -743,6 +770,12 @@ async function main() {
 
     // Start listening for Telegram commands
     log.success('Listening for Telegram commands...');
+
+    // RPC Health Watchdog - every 1 minute
+    setInterval(async () => {
+        const wallet = new ethers.Wallet(PRIVATE_KEY);
+        await getSafeBalance(wallet.address);
+    }, 60_000);
 
     // Log monitoring loop - every 30s
     setInterval(monitorLogs, 30_000);
