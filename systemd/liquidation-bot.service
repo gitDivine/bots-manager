@@ -1,0 +1,17 @@
+[Unit]
+Description=Aave Liquidation Bot
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/aave-liquidation-bot
+ExecStart=/usr/bin/node bot/bot.js
+Restart=always
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=liquidation-bot
+
+[Install]
+WantedBy=multi-user.target

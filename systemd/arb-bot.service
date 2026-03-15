@@ -1,0 +1,17 @@
+[Unit]
+Description=Base Arb Bot
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/base-arb-bot
+ExecStart=/usr/bin/node dist/index.js
+Restart=always
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=arb-bot
+
+[Install]
+WantedBy=multi-user.target

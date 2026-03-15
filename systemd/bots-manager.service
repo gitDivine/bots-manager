@@ -1,0 +1,17 @@
+[Unit]
+Description=Bots Manager Telegram Supervisor
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/bots-manager
+ExecStart=/usr/bin/node manager.js
+Restart=always
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=bots-manager
+
+[Install]
+WantedBy=multi-user.target
