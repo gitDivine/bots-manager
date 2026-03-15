@@ -7,7 +7,7 @@
 const BOTS = {
     arb: {
         name: '⚡ Arb Bot',
-        dir: '/mnt/c/Users/njoku/Downloads/base-arb-bot',
+        dir: '/home/ubuntu/base-arb-bot',
         cmd: 'npm start',
         logFile: 'arb.log',
         // Contract info for /withdraw command
@@ -21,7 +21,7 @@ const BOTS = {
 
     liquidation: {
         name: '💀 Liquidation Bot',
-        dir: '/mnt/c/Users/njoku/liquidation-bot/liquidation-bot',
+        dir: '/home/ubuntu/aave-liquidation-bot',
         cmd: 'npm start',
         logFile: 'liquidation.log',
         contractAddress: '',

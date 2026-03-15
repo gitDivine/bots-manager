@@ -177,13 +177,22 @@ function startBot(botId) {
         return `⚠️ ${bot.name} is already running`;
     }
 
+    log.info(`Starting ${bot.name} in ${bot.dir}...`);
     const logPath = path.resolve(bot.dir, bot.logFile);
     const logStream = fs.createWriteStream(logPath, { flags: 'a' });
+
+    // Explicitly add common binary paths to ensure node/npm/sh are found under Systemd
+    const systemPath = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
+    const combinedEnv = { 
+        ...process.env, 
+        ...loadBotEnv(bot.dir),
+        PATH: process.env.PATH ? `${process.env.PATH}:${systemPath}` : systemPath
+    };
 
     const [cmd, ...args] = bot.cmd.split(' ');
     const child = spawn(cmd, args, {
         cwd: bot.dir,
-        env: { ...process.env, ...loadBotEnv(bot.dir) },
+        env: combinedEnv,
         stdio: ['ignore', 'pipe', 'pipe'],
         shell: true,
     });
