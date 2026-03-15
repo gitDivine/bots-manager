@@ -141,38 +141,33 @@ mybot: {
 
 Restart the manager and the new bot is immediately controllable via Telegram.
 
-## Running 24/7 on a VPS (Recommended)
+## Running 24/7 on a VPS (Immortal Guardian) 🛡️
 
-To ensure your bots stay online even if you log out or the server reboots, use **PM2**.
+To ensure your bots stay online even if you log out or the server reboots, we use **Systemd** as the OS-level supervisor.
 
-> [!TIP]
-> **You only need to run the Manager in PM2.** The manager will handle starting and restarting all your individual bots automatically.
+> [!IMPORTANT]
+> **You only need to run the Manager via Systemd.** The manager acts as the "Guardian" for your individual bots, launching them automatically on startup and restarting them if they ever crash.
 
-### 1. Install PM2
+### 1. Configure the Service
+Ensure your `bots.config.js` uses absolute Linux paths (e.g., `/home/ubuntu/...`).
+
+### 2. Install the Service Unit
+We provide a pre-configured service unit in the `systemd/` folder.
 ```bash
-sudo npm install -g pm2
+sudo cp systemd/bots-manager.service /etc/systemd/system/
 ```
 
-### 2. Start the Manager
+### 3. Activate Persistence
 ```bash
-# From the bots-manager folder
-pm2 start manager.js --name "bots-manager"
+sudo systemctl daemon-reload
+sudo systemctl enable bots-manager
+sudo systemctl start bots-manager
 ```
 
-### 3. Enable Auto-Restart on Boot
-```bash
-pm2 save
-pm2 startup
-```
-*Follow the on-screen instructions from `pm2 startup` to complete the setup.*
-
-### 4. Useful PM2 Commands
-- `pm2 status` — Check if the manager is running
-- `pm2 logs bots-manager` — See live logs from all your bots
-- `pm2 restart bots-manager` — Restart everything
-- `pm2 stop bots-manager` — Stop the manager (temporary)
-- `pm2 delete bots-manager` — Remove the manager from PM2 (permanent)
-- `pm2 save` — Save the current list so it persists after reboot (run after stop/delete)
+### 4. Monitor Everything
+- `sudo systemctl status bots-manager` — Check if the Guardian is alive
+- `journalctl -u bots-manager -f` — See live logs from all your bots in one stream
+- `sudo systemctl restart bots-manager` — Restart the manager + all bots
 
 ## Self-Healing Architecture
 
