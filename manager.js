@@ -705,15 +705,20 @@ async function autoUpdate() {
     try {
         log.info('Checking for bots-manager updates...');
         const resultRaw = execSync('git pull', { encoding: 'utf8', timeout: 15000 });
-        const result = resultRaw.trim();
-        if (!result.toLowerCase().includes('up to date')) {
+        const result = resultRaw.trim().toLowerCase();
+        
+        // Only restart if we actually pulled new code
+        if (result.includes('updating') || (result.includes('changed') && !result.includes('up to date'))) {
             log.info(`[Update] New manager code pulled: ${result}`);
             await tgSend(`🔄 Bots Manager update found — restarting...`);
             execSync('npm install --omit=dev', { encoding: 'utf8', timeout: 30000 });
             process.exit(0); // PM2 or systemd will auto-restart
+        } else {
+            log.info('Bots Manager is already up to date.');
         }
     } catch (err) {
-        log.warn('[Update] autoUpdate skipped:', err.message);
+        log.warn('[Update] autoUpdate encountered an error (likely a local conflict):', err.message);
+        // Do NOT exit here, or we will crash-loop
     }
 }
 
