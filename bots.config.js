@@ -34,10 +34,10 @@ const BOTS = {
 
     arb_arbitrum: {
         name: '⚡ Arb Bot (Arbitrum)',
-        dir: '/home/ubuntu/base-arb-bot',
+        dir: '/home/ubuntu/arb-arb-bot',
         cmd: 'CHAIN=arbitrum npm start',
         logFile: 'arb_arbitrum.log',
-        contractAddress: '',
+        contractAddress: '0x1d1D09a9f891B3E0C62f5C1A3a6dC6DA7E4FE197',
         contractABI: [
             'function withdrawToken(address token) external',
             'function withdrawEth() external',
@@ -47,10 +47,10 @@ const BOTS = {
 
     liquidation_arbitrum: {
         name: '💀 Liquidation Bot (Arbitrum)',
-        dir: '/home/ubuntu/aave-liquidation-bot',
+        dir: '/home/ubuntu/arb-liquidation-bot',
         cmd: 'CHAIN=arbitrum npm start',
         logFile: 'liquidation_arbitrum.log',
-        contractAddress: '',
+        contractAddress: '0x17AC291006F2a239aAB98ab503F32F43d537aCdF',
         contractABI: [
             'function withdraw(address token) external',
             'function withdrawETH() external',
