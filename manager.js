@@ -24,9 +24,29 @@ if (!TG_TOKEN || !TG_CHAT_ID) {
 
 // ── State ────────────────────────────────────────────────────
 const processes = {};   // botId → { process, startedAt, logFile }
-const manuallyKilled = new Set(); // bots stopped via /stop — skip auto-restart
+const STATE_FILE = path.join(__dirname, 'state.json');
+let manuallyKilled = new Set(); // bots stopped via /stop — persist to disk
+const crashCount = {}; // botId -> consecutive crashes
 const alertStatus = {}; // botId:errorType -> lastAlertTimestamp
 const startTime = Date.now();
+
+// ── State Persistence ────────────────────────────────────────
+function saveState() {
+    try {
+        fs.writeFileSync(STATE_FILE, JSON.stringify({ stopped: Array.from(manuallyKilled) }));
+    } catch (e) { log.error('Failed to save state:', e.message); }
+}
+
+function loadState() {
+    try {
+        if (fs.existsSync(STATE_FILE)) {
+            const data = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+            manuallyKilled = new Set(data.stopped || []);
+            log.info(`Loaded stopped state: ${Array.from(manuallyKilled).join(', ') || 'none'}`);
+        }
+    } catch (e) { log.error('Failed to load state:', e.message); }
+}
+loadState();
 
 const ERROR_PATTERNS = [
     { name: 'RPC_429', pattern: /429|Monthly capacity limit exceeded/i, message: '🚫 RPC Limit Exceeded (429)' },
@@ -177,6 +197,11 @@ function startBot(botId) {
         return `⚠️ ${bot.name} is already running`;
     }
 
+    if (manuallyKilled.has(botId)) {
+        manuallyKilled.delete(botId);
+        saveState();
+    }
+
     log.info(`Starting ${bot.name} in ${bot.dir}...`);
     const logPath = path.resolve(bot.dir, bot.logFile);
     const logStream = fs.createWriteStream(logPath, { flags: 'a' });
@@ -195,6 +220,7 @@ function startBot(botId) {
         env: combinedEnv,
         stdio: ['ignore', 'pipe', 'pipe'],
         shell: true,
+        detached: true // Start in a new process group to allow killing children
     });
 
     child.stdout.pipe(logStream);
@@ -206,19 +232,29 @@ function startBot(botId) {
 
         if (manuallyKilled.has(botId)) {
             // Intentionally stopped via /stop — don't auto-restart
-            manuallyKilled.delete(botId);
             await tgSend(`🛑 ${bot.name} stopped by command`);
         } else {
-            // Unexpected crash — auto-restart after 10 seconds
+            // Unexpected crash
+            crashCount[botId] = (crashCount[botId] || 0) + 1;
+            
+            if (crashCount[botId] > 5) {
+                log.error(`[Alert] ${bot.name} is in a crash loop! Disabling auto-restart.`);
+                await tgSend(`🚨 <b>${bot.name} Crash Loop</b>\nBot crashed 5+ times in a row. Auto-restart disabled. Please check logs.`);
+                manuallyKilled.add(botId);
+                saveState();
+                return;
+            }
+
+            const delay = Math.min(10_000 * crashCount[botId], 60_000); // Backoff up to 1m
             await tgSend(
                 `⚠️ ${bot.name} crashed (exit code: ${code})\n` +
-                `🔄 Auto-restarting in 10 seconds...`
+                `🔄 Auto-restarting in ${delay/1000} seconds...`
             );
             setTimeout(() => {
+                if (manuallyKilled.has(botId)) return;
                 const result = startBot(botId);
                 log.info(`Auto-restart: ${result}`);
-                tgSend(`✅ ${bot.name} auto-restarted`);
-            }, 10_000);
+            }, delay);
         }
     });
 
@@ -242,7 +278,17 @@ function killBot(botId) {
     }
 
     manuallyKilled.add(botId);
-    proc.kill('SIGTERM');
+    saveState();
+    
+    try {
+        // Kill the entire process group (negative PID)
+        process.kill(-proc.pid, 'SIGTERM');
+        // Fallback for systems that don't support process group kill
+        setTimeout(() => { if (!proc.killed) proc.kill('SIGKILL'); }, 1000);
+    } catch {
+        proc.kill('SIGKILL');
+    }
+    
     log.info(`Killed ${bot.name}`);
     return `🛑 ${bot.name} stopped`;
 }
@@ -771,10 +817,14 @@ async function main() {
         `\n\nType /help for commands`
     );
 
-    // Auto-start all bots
+    // Auto-start bots (only those NOT manually stopped)
     for (const id of Object.keys(BOTS)) {
-        const result = startBot(id);
-        log.info(result);
+        if (!manuallyKilled.has(id)) {
+            const result = startBot(id);
+            log.info(result);
+        } else {
+            log.info(`Skipping auto-start for ${BOTS[id].name} (manually stopped)`);
+        }
     }
 
     // Send status after bots launch
