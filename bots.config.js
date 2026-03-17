@@ -6,7 +6,8 @@
 
 const BOTS = {
     arb: {
-        name: '⚡ Arb Bot',
+        name: '⚡ Arb Bot (Base)',
+        chain: 'base',
         dir: '/home/ubuntu/base-arb-bot',
         cmd: 'npm start',
         logFile: 'arb.log',
@@ -21,6 +22,7 @@ const BOTS = {
 
     liquidation: {
         name: '💀 Liquidation Bot (Base)',
+        chain: 'base',
         dir: '/home/ubuntu/aave-liquidation-bot',
         cmd: 'CHAIN=base npm start',
         logFile: 'liquidation_base.log',
@@ -34,6 +36,7 @@ const BOTS = {
 
     arb_arbitrum: {
         name: '⚡ Arb Bot (Arbitrum)',
+        chain: 'arbitrum',
         dir: '/home/ubuntu/arb-arb-bot',
         cmd: 'CHAIN=arbitrum npm start',
         logFile: 'arb_arbitrum.log',
@@ -47,6 +50,7 @@ const BOTS = {
 
     liquidation_arbitrum: {
         name: '💀 Liquidation Bot (Arbitrum)',
+        chain: 'arbitrum',
         dir: '/home/ubuntu/arb-liquidation-bot',
         cmd: 'CHAIN=arbitrum npm start',
         logFile: 'liquidation_arbitrum.log',

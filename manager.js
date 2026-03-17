@@ -14,8 +14,22 @@ const { BOTS } = require('./bots.config');
 // ── Config ───────────────────────────────────────────────────
 const TG_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TG_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const RPC_URL = process.env.RPC_URL || "https://mainnet.base.org";
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
+
+const CHAIN_CONFIG = {
+    base: {
+        name: 'Base',
+        rpc: process.env.BASE_HTTP_URL || "https://mainnet.base.org",
+        fallbacks: ["https://mainnet.base.org", "https://base.publicnode.com", "https://1rpc.io/base"],
+        usdc: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+    },
+    arbitrum: {
+        name: 'Arbitrum',
+        rpc: process.env.ARB_HTTP_URL || "https://arb1.arbitrum.io/rpc",
+        fallbacks: ["https://arb1.arbitrum.io/rpc", "https://arbitrum-one-rpc.publicnode.com", "https://1rpc.io/arbitrum"],
+        usdc: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831'
+    }
+};
 
 if (!TG_TOKEN || !TG_CHAT_ID) {
     console.error('❌ Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env');
@@ -54,12 +68,6 @@ const ERROR_PATTERNS = [
     { name: 'INSUFFICIENT_FUNDS', pattern: /insufficient funds/i, message: '💸 Insufficient Funds' },
 ];
 
-const PUBLIC_RPC_FALLBACKS = [
-    "https://mainnet.base.org",
-    "https://base.publicnode.com",
-    "https://1rpc.io/base"
-];
-
 let lastUpdateId = 0;
 let rpcDownStartTime = null;
 let lastRpcErrorAlert = 0;
@@ -72,46 +80,18 @@ function withTimeout(promise, ms, timeoutError = 'Timeout') {
     ]);
 }
 
-async function getSafeBalance(address) {
-    // Force-filter out known dead/unstable Alchemy URLs to prevent hangs
-    const urls = [RPC_URL, ...PUBLIC_RPC_FALLBACKS]
+async function getSafeBalance(address, chainId = 'base') {
+    const config = CHAIN_CONFIG[chainId] || CHAIN_CONFIG.base;
+    const urls = [config.rpc, ...config.fallbacks]
         .filter(url => url && !url.includes('alchemy'));
 
     for (const url of urls) {
         try {
             const provider = new ethers.JsonRpcProvider(url);
-            // Race the balance check against a 5s timeout
             const bal = await withTimeout(provider.getBalance(address), 5000, 'RPC Timeout');
-
-            // Success! Clear the alarm
-            if (rpcDownStartTime) {
-                const downtime = Math.floor((Date.now() - rpcDownStartTime) / 1000);
-                log.success(`RPC Restored after ${downtime}s`);
-                await tgSend(`✅ <b>RPC Connection Restored</b>\nSystems are back online after ${Math.floor(downtime / 60)}m ${downtime % 60}s.`);
-                rpcDownStartTime = null;
-                lastRpcErrorAlert = 0;
-            }
-
             return parseFloat(ethers.formatEther(bal)).toFixed(4);
-        } catch (err) {
-            console.warn(`[Manager] Balance check failed on ${url.split('//')[1]?.split('/')[0]}: ${err.message}`);
-        }
+        } catch (err) { }
     }
-
-    // ALL RPCs failed
-    if (!rpcDownStartTime) rpcDownStartTime = Date.now();
-
-    const downtime = Date.now() - rpcDownStartTime;
-    if (downtime > 300_000) { // 5 minutes threshold
-        if (Date.now() - lastRpcErrorAlert > 300_000) { // Alert every 5 minutes
-            lastRpcErrorAlert = Date.now();
-            log.error(`[CRITICAL] Global RPC Failure detected for ${Math.floor(downtime / 60000)}m`);
-            await tgSend(`🚨 <b>URGENT: Global RPC Failure</b>\n` +
-                `The manager has lost connection to ALL RPC providers for ${Math.floor(downtime / 60000)}m.\n` +
-                `The bots are running blind. Check your RPC settings immediately.`);
-        }
-    }
-
     return '?';
 }
 
@@ -304,30 +284,32 @@ function restartBot(botId) {
 }
 
 // ── Status ───────────────────────────────────────────────────────
+// ── Status ───────────────────────────────────────────────────────
 async function getStatus(botId) {
-    // Fetch ETH balance
-    let ethBal = '?';
-    if (PRIVATE_KEY) {
-        const wallet = new ethers.Wallet(PRIVATE_KEY);
-        ethBal = await getSafeBalance(wallet.address);
-    }
-
     if (botId) {
         const bot = BOTS[botId];
         if (!bot) return `❌ Unknown bot: ${botId}`;
         const proc = processes[botId];
         const running = proc?.process && !proc.process.killed;
         const uptime = running ? formatUptime(Date.now() - proc.startedAt) : 'stopped';
+        
+        let ethBal = '?';
+        if (PRIVATE_KEY) {
+            const wallet = new ethers.Wallet(PRIVATE_KEY);
+            ethBal = await getSafeBalance(wallet.address, bot.chain || 'base');
+        }
+
         return `${bot.name}\n` +
+            `Chain: ${bot.chain || 'base'}\n` +
             `Status: ${running ? '🟢 Running' : '🔴 Stopped'}\n` +
             `Uptime: ${uptime}\n` +
+            `🔋 ETH: ${ethBal}\n` +
             `PID: ${running ? proc.process.pid : 'N/A'}`;
     }
 
     // All bots status
     let msg = `📊 <b>Bots Manager Status</b>\n`;
-    msg += `Manager uptime: ${formatUptime(Date.now() - startTime)}\n`;
-    msg += `🔋 ETH: ${ethBal}\n\n`;
+    msg += `Manager uptime: ${formatUptime(Date.now() - startTime)}\n\n`;
 
     for (const [id, bot] of Object.entries(BOTS)) {
         const proc = processes[id];
@@ -423,22 +405,27 @@ async function getWallet() {
     if (!PRIVATE_KEY) return '❌ Set PRIVATE_KEY in manager .env';
     try {
         const wallet = new ethers.Wallet(PRIVATE_KEY);
-        const ethBal = await getSafeBalance(wallet.address);
+        let msg = `💰 <b>Multi-Chain Wallet</b>\n`;
+        msg += `Address: <code>${wallet.address}</code>\n\n`;
 
-        // USDC balance still uses primary provider but with a timeout
-        let usdcBal = '0.00';
-        try {
-            const urls = [RPC_URL, ...PUBLIC_RPC_FALLBACKS].filter(u => u && !u.includes('alchemy'));
-            const provider = new ethers.JsonRpcProvider(urls[0] || "https://mainnet.base.org");
-            const usdc = new ethers.Contract(USDC_ADDRESS, USDC_ABI, provider);
-            const usdcRaw = await withTimeout(usdc.balanceOf(wallet.address), 5000, 'USDC Timeout');
-            usdcBal = parseFloat(ethers.formatUnits(usdcRaw, 6)).toFixed(2);
-        } catch { }
+        for (const [id, config] of Object.entries(CHAIN_CONFIG)) {
+            const ethBal = await getSafeBalance(wallet.address, id);
+            
+            let usdcBal = '0.00';
+            try {
+                const urls = [config.rpc, ...config.fallbacks].filter(u => u && !u.includes('alchemy'));
+                const provider = new ethers.JsonRpcProvider(urls[0]);
+                const usdc = new ethers.Contract(config.usdc, USDC_ABI, provider);
+                const usdcRaw = await withTimeout(usdc.balanceOf(wallet.address), 5000, 'USDC Timeout');
+                usdcBal = parseFloat(ethers.formatUnits(usdcRaw, 6)).toFixed(2);
+            } catch (err) { }
 
-        return `💰 <b>Wallet</b>\n` +
-            `Address: <code>${wallet.address}</code>\n` +
-            `🔋 ETH: ${ethBal}\n` +
-            `💵 USDC: $${usdcBal}`;
+            msg += `<b>${config.name}</b>:\n`;
+            msg += `  🔋 ETH: ${ethBal}\n`;
+            msg += `  💵 USDC: $${usdcBal}\n\n`;
+        }
+
+        return msg;
     } catch (err) {
         return `❌ Wallet error: ${err.message}`;
     }
@@ -478,24 +465,27 @@ async function doWithdraw(botId, tokenAddress) {
     const bot = BOTS[botId];
     if (!bot) return `❌ Unknown bot: ${botId}`;
     if (!bot.contractAddress) return `❌ No contract address set for ${bot.name}`;
-    if (!RPC_URL || !PRIVATE_KEY) return '❌ Set RPC_URL and PRIVATE_KEY';
+    if (!PRIVATE_KEY) return '❌ Set PRIVATE_KEY in manager .env';
+
+    const chain = bot.chain || 'base';
+    const config = CHAIN_CONFIG[chain];
 
     try {
-        const urls = [RPC_URL, ...PUBLIC_RPC_FALLBACKS].filter(u => u && !u.includes('alchemy'));
-        const provider = new ethers.JsonRpcProvider(urls[0] || "https://mainnet.base.org");
+        const urls = [config.rpc, ...config.fallbacks].filter(u => u && !u.includes('alchemy'));
+        const provider = new ethers.JsonRpcProvider(urls[0]);
         const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
         const contract = new ethers.Contract(bot.contractAddress, bot.contractABI, wallet);
 
-        if (tokenAddress === 'eth') {
-            const tx = await contract.withdrawETH();
+        if (tokenAddress.toLowerCase() === 'eth') {
+            const tx = (typeof contract.withdrawETH === 'function') ? await contract.withdrawETH() : await contract.withdrawEth();
             await tx.wait();
-            return `✅ ETH withdrawn from ${bot.name}\nTX: ${tx.hash}`;
+            return `✅ ETH withdrawn from ${bot.name} (${chain})\nTX: ${tx.hash}`;
         } else {
             const balance = await contract.getBalance(tokenAddress);
             if (balance === 0n) return `⚠️ Zero balance for this token in ${bot.name}`;
-            const tx = await contract.withdraw(tokenAddress);
+            const tx = (typeof contract.withdraw === 'function') ? await contract.withdraw(tokenAddress) : await contract.withdrawToken(tokenAddress);
             await tx.wait();
-            return `✅ Withdrawn from ${bot.name}\nTX: ${tx.hash}`;
+            return `✅ Withdrawn from ${bot.name} (${chain})\nTX: ${tx.hash}`;
         }
     } catch (err) {
         return `❌ Withdraw failed: ${err.message}`;
