@@ -748,25 +748,30 @@ function loadContractAddresses() {
 
 async function autoUpdate() {
     try {
+        const branch = 'master';
         log.info('Checking for bots-manager updates...');
+        execSync(`git fetch origin ${branch}`, { stdio: 'ignore', timeout: 15000 });
         
-        // Safety: Reset files modified by npm install before pulling
-        execSync('git checkout package.json package-lock.json', { encoding: 'utf8', timeout: 5000 });
+        const local = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
+        const remote = execSync(`git rev-parse origin/${branch}`, { encoding: 'utf8' }).trim();
         
-        const resultRaw = execSync('git pull', { encoding: 'utf8', timeout: 15000 });
-        const result = resultRaw.trim().toLowerCase();
-        
-        // Only restart if we actually pulled new code
-        if (result.includes('updating') || (result.includes('changed') && !result.includes('up to date'))) {
-            log.info(`[Update] New manager code pulled: ${result}`);
-            await tgSend(`🔄 Bots Manager update found — restarting...`);
-            execSync('powershell -ExecutionPolicy Bypass -Command "npm install --omit=dev"', { encoding: 'utf8', timeout: 30000 });
-            process.exit(0); // PM2 or systemd will auto-restart
+        if (local !== remote) {
+            log.info(`[Update] New manager version detected (${remote.slice(0, 7)}). Applying clean update...`);
+            
+            // Force clean reset to remote state
+            execSync(`git reset --hard origin/${branch}`, { stdio: 'inherit' });
+            
+            // Re-install dependencies
+            log.info('[Update] Re-installing manager dependencies...');
+            execSync('npm install --omit=dev', { encoding: 'utf8', timeout: 60000 });
+            
+            await tgSend(`🔄 Bots Manager updated to ${remote.slice(0, 7)} — restarting...`);
+            process.exit(0);
         } else {
             log.info('Bots Manager is already up to date.');
         }
     } catch (err) {
-        log.warn('[Update] autoUpdate encountered an error (likely a local conflict):', err.message);
+        log.warn('[Update] autoUpdate skipped:', err.message);
     }
 }
 
