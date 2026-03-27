@@ -786,9 +786,10 @@ async function main() {
 
     log.info(`Managing ${Object.keys(BOTS).length} bot(s): ${Object.keys(BOTS).join(', ')}`);
 
-    // Log the active RPC (verifying the firewall)
-    const activeRpc = [RPC_URL, ...PUBLIC_RPC_FALLBACKS].filter(u => u && !u.includes('alchemy'))[0];
-    log.info(`Active RPC: ${activeRpc?.split('//')[1]?.split('/')[0] || 'NONE'}`);
+    // Log active RPCs per chain
+    for (const [chain, cfg] of Object.entries(CHAIN_CONFIG)) {
+        log.info(`RPC [${cfg.name}]: ${cfg.rpc.split('//')[1]?.split('/')[0] || 'NONE'}`);
+    }
 
     // Initial auto-update check
     await autoUpdate();
