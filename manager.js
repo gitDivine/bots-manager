@@ -60,7 +60,7 @@ function loadState() {
         }
     } catch (e) { log.error('Failed to load state:', e.message); }
 }
-loadState();
+// loadState() called after log is defined — see below line ~106
 
 const ERROR_PATTERNS = [
     { name: 'RPC_429', pattern: /429|Monthly capacity limit exceeded/i, message: '🚫 RPC Limit Exceeded (429)' },
@@ -103,6 +103,9 @@ const log = {
     warn: (...m) => console.log(`[${ts()}] ⚠️`, ...m),
     error: (...m) => console.error(`[${ts()}] ❌`, ...m),
 };
+
+// Now safe to call — log is defined
+loadState();
 
 // ── Telegram API ─────────────────────────────────────────────
 async function tgSend(text) {
