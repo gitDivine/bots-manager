@@ -318,13 +318,28 @@ async function getStatus(botId) {
         msg += `${running ? '🟢' : '🔴'} <b>${bot.name}</b>`;
         if (running) {
             msg += ` — ${uptime}\n`;
-            // Add last 2 lines of logs for visibility
             const logPath = path.resolve(bot.dir, bot.logFile);
             if (fs.existsSync(logPath)) {
                 try {
                     const content = fs.readFileSync(logPath, 'utf8').trim().split('\n');
-                    const lastLines = content.slice(-2).map(l => `  <i>${l.slice(0, 50)}...</i>`).join('\n');
-                    msg += `${lastLines}\n`;
+                    // Find the most useful recent lines (metrics heartbeat, stats, triage)
+                    const recent = content.slice(-20);
+                    const metricsLine = recent.reverse().find(l => l.includes('pools |') || l.includes('Gaps:'));
+                    const statsLine = recent.find(l => l.includes('Stats') || l.includes('Trades:'));
+                    const triageLine = recent.find(l => l.includes('[Loop:') || l.includes('Triage'));
+
+                    if (metricsLine) {
+                        // Arb bot — show metrics heartbeat (longer line, no harsh truncation)
+                        msg += `  <i>${metricsLine.slice(0, 120)}</i>\n`;
+                        if (statsLine) msg += `  <i>${statsLine.slice(0, 80)}</i>\n`;
+                    } else if (triageLine) {
+                        // Liquidation bot — show triage info
+                        const lastLines = content.slice(-2).map(l => `  <i>${l.slice(0, 80)}</i>`).join('\n');
+                        msg += `${lastLines}\n`;
+                    } else {
+                        const lastLines = content.slice(-2).map(l => `  <i>${l.slice(0, 80)}</i>`).join('\n');
+                        msg += `${lastLines}\n`;
+                    }
                 } catch { }
             }
         } else {
