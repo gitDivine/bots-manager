@@ -324,7 +324,7 @@ async function getStatus(botId) {
                     const content = fs.readFileSync(logPath, 'utf8').trim().split('\n');
                     // Find the most useful recent lines (metrics heartbeat, stats, triage)
                     const recent = content.slice(-20);
-                    const metricsLine = recent.reverse().find(l => l.includes('pools |') || l.includes('Gaps:'));
+                    const metricsLine = recent.reverse().find(l => l.includes('pools |') || l.includes('Gaps:') || l.includes('[Metrics]'));
                     const statsLine = recent.find(l => l.includes('Stats') || l.includes('Trades:'));
                     const triageLine = recent.find(l => l.includes('[Loop:') || l.includes('Triage'));
 
