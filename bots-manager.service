@@ -1,0 +1,23 @@
+[Unit]
+Description=0xd Bots Manager — Telegram-controlled supervisor
+After=network.target
+
+[Service]
+WorkingDirectory=/home/ubuntu/bots-manager
+ExecStart=/usr/bin/node manager.js
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+User=ubuntu
+
+[Install]
+WantedBy=multi-user.target
+
+# Install with:
+#   sudo cp bots-manager.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable bots-manager
+#   sudo systemctl start bots-manager
+#
+# View logs: journalctl -u bots-manager -f
+# Status: systemctl status bots-manager
